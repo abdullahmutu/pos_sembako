@@ -53,10 +53,8 @@ Route::middleware(['auth:web', 'admin'])->prefix('admin')->group(function () {
     Route::get('/reports/products', [AdminReportController::class, 'products'])->name('reports.products');
     Route::get('/reports/receivables', [AdminReportController::class, 'receivables'])->name('reports.receivables');
 
-    Route::get('/store-setting', [AdminStoreSettingController::class, 'edit'])
-        ->name('store-setting.edit');
-    Route::put('/store-setting', [AdminStoreSettingController::class, 'update'])
-        ->name('store-setting.update');
+    Route::get('/profile', [AdminStoreSettingController::class, 'edit'])->name('profile');
+    Route::put('/profile', [AdminStoreSettingController::class, 'update'])->name('profile.update');
 
     Route::post('/logout', [AdminAuthController::class, 'logout'])->name('logout');
 });

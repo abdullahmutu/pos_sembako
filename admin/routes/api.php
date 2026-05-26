@@ -18,6 +18,7 @@ Route::prefix('v1')->name('api.')->group(function () {
     Route::post('/auth/login', [AuthController::class, 'login']);
 
     Route::get('products', [ProductController::class, 'index']);
+
     // Protected routes
     Route::middleware('auth:sanctum')->group(function () {
         // Auth routes
@@ -28,18 +29,22 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::get('/dashboard/admin', [DashboardController::class, 'adminDashboard'])->middleware('admin');
         Route::get('/dashboard/kasir', [DashboardController::class, 'kasirDashboard'])->middleware('kasir');
 
-        // Categories (Admin only)
+        // Categories: read & create untuk semua (admin+kasir), update/delete hanya admin
+        Route::get('categories', [CategoryController::class, 'index']);
+        Route::get('categories/{category}', [CategoryController::class, 'show']);
+        Route::post('categories', [CategoryController::class, 'store']); // FIX: dipindah keluar dari middleware admin
         Route::middleware('admin')->group(function () {
-            Route::apiResource('categories', CategoryController::class);
+            Route::put('categories/{category}', [CategoryController::class, 'update']);
+            Route::delete('categories/{category}', [CategoryController::class, 'destroy']);
         });
 
         // Products (Admin CRUD, Kasir read-only)
-        
         Route::get('products/low-stock', [ProductController::class, 'lowStock']);
+        Route::get('products/by-barcode/{barcode}', [ProductController::class, 'showByBarcode']);
         Route::get('products/{product}', [ProductController::class, 'show']);
+        Route::post('products', [ProductController::class, 'store']);
+        Route::put('products/{product}', [ProductController::class, 'update']);
         Route::middleware('admin')->group(function () {
-            Route::post('products', [ProductController::class, 'store']);
-            Route::put('products/{product}', [ProductController::class, 'update']);
             Route::delete('products/{product}', [ProductController::class, 'destroy']);
         });
 
@@ -49,7 +54,7 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::get('customers/{customer}', [CustomerController::class, 'show']);
 
         Route::middleware('kasir_or_admin')->group(function () {
-            Route::post('customers', [CustomerController::class, 'store']); // ✅ kasir & admin bisa
+            Route::post('customers', [CustomerController::class, 'store']);
         });
 
         Route::middleware('admin')->group(function () {
@@ -57,7 +62,7 @@ Route::prefix('v1')->name('api.')->group(function () {
             Route::delete('customers/{customer}', [CustomerController::class, 'destroy']);
         });
 
-        // Sales Transactions (Kasir create, Admin read)
+        // Sales Transactions
         Route::get('sales-transactions', [SalesTransactionController::class, 'index']);
         Route::get('sales-transactions/reports/today', [SalesTransactionController::class, 'todaysSalesReport']);
         Route::get('sales-transactions/{salesTransaction}', [SalesTransactionController::class, 'show']);

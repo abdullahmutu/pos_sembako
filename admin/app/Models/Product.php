@@ -5,18 +5,14 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-
-/**
- * @property int $id
- * @property string $name
- * @property int $category_id
- */
+use Illuminate\Support\Facades\Storage;
 
 class Product extends Model
 {
     protected $fillable = [
         'sku',
         'name',
+        'barcode',
         'description',
         'category_id',
         'purchase_price',
@@ -33,6 +29,17 @@ class Product extends Model
         'selling_price' => 'decimal:2',
         'is_active' => 'boolean',
     ];
+
+    protected $appends = ['image_url'];
+
+    public function getImageUrlAttribute(): ?string
+    {
+        if (!$this->image) {
+            return null;
+        }
+
+        return asset('storage/' . $this->image);
+    }
 
     public function category(): BelongsTo
     {

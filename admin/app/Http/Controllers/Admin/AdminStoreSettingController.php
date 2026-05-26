@@ -39,7 +39,7 @@ class AdminStoreSettingController extends Controller
 
         $setting->fill($validated)->save();
 
-        return redirect()->route('store-setting.edit')
+        return redirect()->route('profile')
                          ->with('success', 'Profil toko berhasil disimpan');
     }
 }
