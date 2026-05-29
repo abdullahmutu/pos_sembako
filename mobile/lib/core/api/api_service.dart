@@ -137,8 +137,30 @@ class ApiService {
     String endpoint,
     Map<String, String> fields,
     File? imageFile,
-  ) => _multipartRequest('PUT', endpoint, fields, imageFile);
+  ) async {
+    final uri = Uri.parse('${AppConfig.baseUrl}/$endpoint');
+    final request = http.MultipartRequest('POST', uri); // ← POST, bukan PUT
 
+    final token = await _getToken();
+    if (token != null) request.headers['Authorization'] = 'Bearer $token';
+    request.headers['Accept'] = 'application/json';
+
+    request.fields['_method'] = 'PUT'; // ← method spoofing Laravel
+    request.fields.addAll(fields);
+
+    if (imageFile != null) {
+      final ext = imageFile.path.split('.').last.toLowerCase();
+      final mimeType = ext == 'png' ? 'png' : 'jpeg';
+      request.files.add(await http.MultipartFile.fromPath(
+        'image', imageFile.path,
+        contentType: MediaType('image', mimeType),
+      ));
+    }
+
+    final streamed = await request.send();
+    final response = await http.Response.fromStream(streamed);
+    return _handleResponse(response);
+  }
   // Handler response terpusat
   static dynamic _handleResponse(http.Response response) {
     debugPrint('STATUS : ${response.statusCode}');

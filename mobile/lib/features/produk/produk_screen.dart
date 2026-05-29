@@ -185,7 +185,7 @@ class _ProdukScreenState extends State<ProdukScreen> {
           'name': p.nama,
           'sku': p.sku,
           // 'barcode': p.sku,
-          'category_id': p.categoryId,
+          'category_id': int.tryParse(p.categoryId) ?? p.categoryId,
           'unit': p.satuan,
           'stock': p.stok + p.jumlahDitambah,
           'purchase_price': p.hargaBeli ?? 0,
