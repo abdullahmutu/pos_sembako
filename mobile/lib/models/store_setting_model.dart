@@ -36,7 +36,7 @@ class StoreSettingModel {
     }
     // Sesuaikan base URL dengan server kamu
     // Ganti IP/domain sesuai kebutuhan
-    const baseUrl = 'http://192.168.1.5:8000/storage/';
+    const baseUrl = 'http://192.168.1.8:8000/storage/';
     return '$baseUrl$path';
   }
 }

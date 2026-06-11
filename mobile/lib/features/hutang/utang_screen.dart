@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile/core/api/api_service.dart';
 import 'package:mobile/widgets/tambah_utang_form.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+// import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mobile/features/hutang/detail_piutang_screen.dart';
 
 // ============================================================
@@ -101,43 +101,38 @@ class _UtangScreenState extends State<UtangScreen> {
   }
 
   Future<void> _fetchData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('auth_token');
-    debugPrint('TOKEN: $token');
+  setState(() {
+    _isLoading = true;
+    _errorMessage = null;
+  });
+  try {
+    final response = await ApiService.get('payments/receivables');
+    final List raw = response is List ? response : (response['data'] ?? []);
+    final list = raw.map((e) => Piutang.fromJson(e)).toList();
+
     if (!mounted) return;
     setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-    try {
-      final response = await ApiService.get('payments/receivables');
-      final List raw = response is List ? response : (response['data'] ?? []);
-      final list = raw.map((e) => Piutang.fromJson(e)).toList();
+      _daftarPiutang = list;
 
-      if (!mounted) return;
-      setState(() {
-        _daftarPiutang = list;
-        _totalPiutang = response is Map
-            ? (response['total'] ?? list.fold(0.0, (s, p) => s + p.jumlah))
-                .toDouble()
-            : list.fold(0.0, (s, p) => s + p.jumlah);
-        _overdueCount = response is Map
-            ? (response['overdue_count'] ??
-                list.where((p) => p.status == 'overdue').length)
-            : list.where((p) => p.status == 'overdue').length;
-        _totalDebitur = list.length; // ← total orang
-        _persentaseNaik =
-            response is Map ? (response['persentase_naik'] ?? 0).toDouble() : 0;
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _errorMessage = e.toString().replaceFirst('Exception: ', '');
-        _isLoading = false;
-      });
-    }
+      // Selalu hitung dari list, jangan pakai response['total']
+      // karena response['total'] bisa berisi jumlah record bukan rupiah
+      _totalPiutang = list.fold(0.0, (s, p) => s + p.jumlah);
+
+      _overdueCount = list.where((p) => p.status == 'overdue').length;
+      _totalDebitur = list.length;
+      _persentaseNaik = response is Map
+          ? (response['persentase_naik'] ?? 0).toDouble()
+          : 0;
+      _isLoading = false;
+    });
+  } catch (e) {
+    if (!mounted) return;
+    setState(() {
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      _isLoading = false;
+    });
   }
+}
 
   List<Piutang> get _sorted {
     final list = [..._daftarPiutang];
@@ -205,7 +200,8 @@ class _UtangScreenState extends State<UtangScreen> {
       floatingActionButton: FloatingActionButton(
         onPressed: _bukaFormTambahUtang,
         backgroundColor: hijauUtama,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(16))),
         child: const Icon(Icons.add, color: Colors.white, size: 28),
       ),
       body: _isLoading
@@ -235,80 +231,76 @@ class _UtangScreenState extends State<UtangScreen> {
   }
 
   PreferredSizeWidget _buildAppBar() {
-    return AppBar(
-      backgroundColor: Colors.white,
-      elevation: 0,
-      leading: IconButton(
-        icon: const Icon(Icons.menu, color: Colors.black87),
-        onPressed: () => Scaffold.of(context).openDrawer(),
-      ),
-      title: const Text(
-        'Buku Utang',
-        style: TextStyle(
-            color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 20),
-      ),
-      actions: [
-        IconButton(
-            icon: const Icon(Icons.search, color: Colors.black87),
-            onPressed: () {}),
-        Padding(
-          padding: const EdgeInsets.only(right: 12),
-          child: CircleAvatar(
-            backgroundColor: hijauMuda,
-            radius: 18,
-            child: const Icon(Icons.person, color: hijauUtama, size: 20),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildKartuTotal() {
-    // Total dihitung langsung dari daftar hutang yang tampil
-    final totalDaftarHutang = _daftarPiutang.fold(0.0, (s, p) => s + p.jumlah);
-
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      padding: const EdgeInsets.all(24),
+  return AppBar(
+    backgroundColor: Colors.white,
+    elevation: 0,
+    automaticallyImplyLeading: false,
+    title: Container(
+      height: 42,
       decoration: BoxDecoration(
-          color: hijauUtama, borderRadius: BorderRadius.circular(20)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('TOTAL PIUTANG AKTIF',
-              style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 1.2)),
-          const SizedBox(height: 8),
-          Text(_formatRupiah.format(_totalPiutang > 0 ? _totalPiutang : totalDaftarHutang),
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Row(children: [
+        color: const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: const TextField(
+        decoration: InputDecoration(
+          hintText: 'Cari hutang...',
+          hintStyle: TextStyle(color: Colors.grey, fontSize: 14),
+          prefixIcon: Icon(Icons.search, color: Colors.grey, size: 20),
+          border: InputBorder.none,
+          contentPadding: EdgeInsets.symmetric(vertical: 11),
+        ),
+      ),
+    ),
+  );
+}
+  Widget _buildKartuTotal() {
+  return Container(
+    margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+    padding: const EdgeInsets.all(24),
+    decoration: BoxDecoration(
+        color: hijauUtama, borderRadius: BorderRadius.circular(20)),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('TOTAL PIUTANG AKTIF',
+            style: TextStyle(
+                color: Colors.white70,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 1.2)),
+        const SizedBox(height: 8),
+        // _totalPiutang sekarang sudah pasti hasil fold dari jumlah rupiah
+        Text(
+          _formatRupiah.format(_totalPiutang),
+          style: const TextStyle(
+              color: Colors.white,
+              fontSize: 32,
+              fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
             const Icon(Icons.people_outline, color: Colors.white70, size: 16),
             const SizedBox(width: 6),
-            if (_persentaseNaik > 0)
-              Row(children: [
-                const Icon(Icons.trending_up, color: Colors.white70, size: 14),
-                const SizedBox(width: 4),
-                Text(
-                  '+${_persentaseNaik.toStringAsFixed(1)}% bulan ini',
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                ),
-              ]),
             Text(
               '${_daftarPiutang.length} debitur aktif',
               style: const TextStyle(color: Colors.white70, fontSize: 13),
             ),
-          ]),
-        ],
-      ),
-    );
-  }
+            if (_persentaseNaik > 0) ...[
+              const SizedBox(width: 12),
+              const Icon(Icons.trending_up, color: Colors.white70, size: 14),
+              const SizedBox(width: 4),
+              Text(
+                '+${_persentaseNaik.toStringAsFixed(1)}% bulan ini',
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+            ],
+          ],
+        ),
+      ],
+    ),
+  );
+}
 
   Widget _buildKartuStatistik() {
     return Padding(
@@ -320,7 +312,7 @@ class _UtangScreenState extends State<UtangScreen> {
             nilai: '${_overdueCount.toString().padLeft(2, '0')} Orang',
             icon: Icons.error_outline,
             iconColor: merahOverdue,
-            iconBg: merahOverdue.withOpacity(0.1),
+            iconBg: merahOverdue.withValues(alpha: 0.1),
           ),
         ),
         const SizedBox(width: 12),
