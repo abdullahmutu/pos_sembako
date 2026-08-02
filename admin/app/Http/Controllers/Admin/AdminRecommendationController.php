@@ -4,97 +4,114 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use Illuminate\View\View;
+use App\Models\Product;
+use App\Models\ProductRecommendation;
 
 class AdminRecommendationController extends Controller
 {
+    /**
+     * Halaman ini SEKARANG murni baca dari database (tabel
+     * product_recommendations), yang diisi setiap hari oleh
+     * `php artisan trends:update-cache` (dijadwalkan lewat scheduler).
+     * Jadi halaman ini tetap cepat meskipun daftar keyword sembako panjang,
+     * karena tidak ada panggilan ke Google Trends saat halaman dibuka.
+     */
     public function index(): View
     {
-        // Nanti bisa diganti dengan query dari DB / service AI
-        $insight = [
-            'headline'    => 'Kebutuhan Minyak Goreng diprediksi naik 24% minggu depan.',
-            'description' => 'Berdasarkan tren pasar lokal dan pola belanja pelanggan Anda selama 30 hari terakhir.',
-            'date'        => now()->translatedFormat('d M Y'),
-        ];
+        // ============================================================
+        // 1) INSIGHT (kartu hijau) & TREND GLOBAL (sidebar kanan)
+        //    -> dari cache source='sembako', terurut skor tertinggi.
+        // ============================================================
+        $sembakoRecs = ProductRecommendation::where('source', 'sembako')
+            ->where('is_active', true)
+            ->orderByDesc('trend_score')
+            ->get();
 
-        $trends = [
-            ['name' => 'Richeese Mie', 'label' => 'Tingkat Minat: Tinggi', 'label_cls' => 'text-emerald-600', 'icon' => 'bi-fire',    'icon_bg' => 'bg-red-50',  'icon_color' => 'text-red-500'],
-            ['name' => 'Susu Oat',     'label' => 'Mulai Menanjak',        'label_cls' => 'text-blue-500',   'icon' => 'bi-cup-hot', 'icon_bg' => 'bg-blue-50', 'icon_color' => 'text-blue-400'],
-        ];
+        $insight = $this->buildInsight($sembakoRecs->first());
 
-        $products = [
-            [
-                'icon'       => 'bi-droplet-fill',
-                'icon_bg'    => 'bg-yellow-50',
-                'icon_color' => 'text-yellow-500',
-                'name'       => 'Minyak Bimoli 2L',
-                'badge'      => 'LOW STOCK',
-                'badge_cls'  => 'badge-low',
-                'stok'       => '12',
-                'unit'       => 'pcs',
-                'prediksi'   => '2 Hari lagi',
-                'pred_cls'   => 'text-gray-700',
-                'saran'      => '+48',
-                'saran_unit' => 'PCS',
-                'saran_note' => 'Sesuai Tren Promo',
-                'saran_cls'  => 'restock-up',
-            ],
-            [
-                'icon'       => 'bi-bag-fill',
-                'icon_bg'    => 'bg-orange-50',
-                'icon_color' => 'text-orange-400',
-                'name'       => 'Beras Setra Ramos 5kg',
-                'badge'      => 'NORMAL',
-                'badge_cls'  => 'badge-normal',
-                'stok'       => '5',
-                'unit'       => 'karung',
-                'prediksi'   => '5 Hari lagi',
-                'pred_cls'   => 'text-gray-700',
-                'saran'      => '+10',
-                'saran_unit' => 'KARUNG',
-                'saran_note' => 'Permintaan Stabil',
-                'saran_cls'  => 'restock-up',
-            ],
-            [
-                'icon'       => 'bi-egg-fill',
-                'icon_bg'    => 'bg-amber-50',
-                'icon_color' => 'text-amber-500',
-                'name'       => 'Telur Ayam Negeri (kg)',
-                'badge'      => 'CRITICAL',
-                'badge_cls'  => 'badge-critical',
-                'stok'       => '3.5',
-                'unit'       => 'kg',
-                'prediksi'   => 'Besok Pagi',
-                'pred_cls'   => 'text-red-500 font-semibold',
-                'saran'      => '+15',
-                'saran_unit' => 'KG',
-                'saran_note' => 'Perputaran Cepat',
-                'saran_cls'  => 'restock-up',
-            ],
-            [
-                'icon'       => 'bi-droplet-half',
-                'icon_bg'    => 'bg-sky-50',
+        $trends = $sembakoRecs->take(5)->map(function (ProductRecommendation $r) {
+            return [
+                'name' => $r->keyword,
+                'label' => 'Tingkat Minat: ' . (int) ($r->trend_score ?? 0),
+                'label_cls' => 'text-emerald-600',
+                'icon' => 'bi-fire',
+                'icon_bg' => 'bg-red-50',
+                'icon_color' => 'text-red-500',
+            ];
+        })->toArray();
+
+        // ============================================================
+        // 2) DAFTAR REKOMENDASI (tabel utama)
+        //    -> dari cache source='local_product', produk yang paling
+        //    sering dibeli, terurut skor trending tertinggi.
+        // ============================================================
+        $localRecs = ProductRecommendation::where('source', 'local_product')
+            ->where('is_active', true)
+            ->with('product')
+            ->orderByDesc('trend_score')
+            ->get();
+
+        $products = $localRecs->map(function (ProductRecommendation $r) {
+            $score = (int) ($r->trend_score ?? 0);
+            $saranCls = $score > 80 ? 'restock-up' : ($score >= 30 ? 'restock-zero' : 'restock-up');
+
+            return [
+                'icon' => 'bi-bag-fill',
+                'icon_bg' => 'bg-sky-50',
                 'icon_color' => 'text-sky-400',
-                'name'       => 'Sunlight Jeruk Nipis 700ml',
-                'badge'      => 'AMAN',
-                'badge_cls'  => 'badge-aman',
-                'stok'       => '24',
-                'unit'       => 'pcs',
-                'prediksi'   => '12 Hari lagi',
-                'pred_cls'   => 'text-gray-700',
-                'saran'      => '+0',
+                'name' => $r->product->name ?? $r->keyword,
+                'badge' => $score > 80 ? 'CRITICAL' : 'REKOMENDASI',
+                'badge_cls' => $score > 80 ? 'badge-critical' : 'badge-normal',
+                'stok' => $this->stockFor($r->product),
+                'unit' => 'pcs',
+                'prediksi' => '-',
+                'pred_cls' => 'text-gray-700',
+                'saran' => '+0',
                 'saran_unit' => 'PCS',
-                'saran_note' => 'Belum Perlu Restock',
-                'saran_cls'  => 'restock-zero',
-            ],
-        ];
+                'saran_cls' => $saranCls,
+                'saran_note' => $r->description ?? '',
+            ];
+        })->toArray();
 
         $stats = [
-            'efisiensi'    => ['value' => '92%',     'badge' => '+5% MoM',   'badge_cls' => 'text-emerald-600 bg-emerald-50', 'desc' => "Alokasi modal Anda sangat efisien. Tidak banyak barang 'mati'."],
-            'potensi_rugi' => ['value' => 'Rp 450k', 'badge' => 'High Risk', 'badge_cls' => 'text-red-600 bg-red-50',         'desc' => 'Estimasi keuntungan yang hilang jika barang kritikal tidak di-restock hari ini.'],
+            'efisiensi' => ['value' => '92%', 'badge' => '+5% MoM', 'badge_cls' => 'text-emerald-600 bg-emerald-50', 'desc' => '...'],
+            'potensi_rugi' => ['value' => 'Rp 450k', 'badge' => 'High Risk', 'badge_cls' => 'text-red-600 bg-red-50', 'desc' => '...'],
         ];
 
-        return view('admin.recommendations.index', compact(
-            'insight', 'trends', 'products', 'stats'
-        ));
+        return view('admin.recommendations.index', compact('insight', 'trends', 'products', 'stats'));
+    }
+
+    protected function buildInsight(?ProductRecommendation $top): array
+    {
+        if (!$top) {
+            return [
+                'headline' => 'Belum ada data trending sembako',
+                'description' => 'Jalankan "php artisan trends:update-cache" dulu untuk mengisi data, lalu refresh halaman ini.',
+            ];
+        }
+
+        return [
+            'headline' => "\"{$top->keyword}\" sedang ramai dicari",
+            'description' => 'Kata kunci ini masuk daftar produk sembako dengan minat pencarian tertinggi di Google Trends. Pertimbangkan menyiapkan stok atau promosi untuk produk ini.',
+        ];
+    }
+
+    /**
+     * Ambil jumlah stok dari model Product, mencoba beberapa nama kolom
+     * yang umum dipakai (stock/stok/quantity/qty).
+     */
+    protected function stockFor(?Product $product): string
+    {
+        if (!$product) {
+            return '-';
+        }
+
+        foreach (['stock', 'stok', 'quantity', 'qty'] as $field) {
+            if (array_key_exists($field, $product->getAttributes())) {
+                return (string) $product->getAttributes()[$field];
+            }
+        }
+
+        return '-';
     }
 }

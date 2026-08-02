@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile/core/api/api_service.dart';
 
@@ -70,6 +73,18 @@ class DetailPiutang {
 
   double get persentaseLunas =>
       amount > 0 ? (paid / amount * 100).clamp(0, 100) : 0;
+
+  /// Tanggal pembayaran terakhir (yang paling baru), null jika belum pernah bayar.
+  String? get tanggalBayarTerakhir {
+    if (riwayat.isEmpty) return null;
+    final sorted = List<RiwayatBayar>.from(riwayat)
+      ..sort((a, b) {
+        final da = DateTime.tryParse(a.paidAt) ?? DateTime(0);
+        final db = DateTime.tryParse(b.paidAt) ?? DateTime(0);
+        return db.compareTo(da); // descending: terbaru dulu
+      });
+    return sorted.first.paidAt;
+  }
 }
 
 class ItemTransaksi {
@@ -267,6 +282,8 @@ class _DetailPiutangScreenState extends State<DetailPiutangScreen> {
     switch (method) {
       case 'cash':
         return 'Tunai';
+      case 'qris':
+        return 'QRIS';
       case 'bank_transfer':
         return 'Transfer Bank';
       case 'check':
@@ -280,6 +297,8 @@ class _DetailPiutangScreenState extends State<DetailPiutangScreen> {
     switch (method) {
       case 'cash':
         return Icons.payments_outlined;
+      case 'qris':
+        return Icons.qr_code_2_outlined;
       case 'bank_transfer':
         return Icons.account_balance_outlined;
       case 'check':
@@ -295,6 +314,47 @@ class _DetailPiutangScreenState extends State<DetailPiutangScreen> {
       return DateFormat('dd MMM yyyy, HH:mm', 'id_ID').format(dt);
     } catch (_) {
       return raw;
+    }
+  }
+
+  // ── Selisih hari relatif terhadap hari ini (untuk jatuh tempo) ──
+  int? _selisihHariJatuhTempo(String dueDate) {
+    try {
+      final due = DateTime.parse(dueDate).toLocal();
+      final now = DateTime.now();
+      final dueDay = DateTime(due.year, due.month, due.day);
+      final today = DateTime(now.year, now.month, now.day);
+      return dueDay.difference(today).inDays;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _labelSelisihHari(int selisih) {
+    if (selisih < 0) return 'Terlambat ${selisih.abs()} hari';
+    if (selisih == 0) return 'Jatuh tempo hari ini';
+    return '$selisih hari lagi';
+  }
+
+  Color _warnaSelisihHari(int selisih) {
+    if (selisih < 0) return merah;
+    if (selisih <= 3) return kuning;
+    return hijauUtama;
+  }
+
+  // ── Selisih hari lalu (untuk tanggal pembayaran terakhir) ──
+  String _selisihHariLalu(String tanggal) {
+    try {
+      final dt = DateTime.parse(tanggal).toLocal();
+      final now = DateTime.now();
+      final dtDay = DateTime(dt.year, dt.month, dt.day);
+      final today = DateTime(now.year, now.month, now.day);
+      final diff = today.difference(dtDay).inDays;
+      if (diff <= 0) return 'Hari ini';
+      if (diff == 1) return 'Kemarin';
+      return '$diff hari lalu';
+    } catch (_) {
+      return '';
     }
   }
 
@@ -379,6 +439,8 @@ class _DetailPiutangScreenState extends State<DetailPiutangScreen> {
                         _buildKartuRingkasan(),
                         const SizedBox(height: 16),
                         _buildProgressBayar(),
+                        const SizedBox(height: 16),
+                        _buildInfoTanggal(),
                         const SizedBox(height: 16),
                         _buildItemTransaksi(),
                         const SizedBox(height: 16),
@@ -589,6 +651,95 @@ class _DetailPiutangScreenState extends State<DetailPiutangScreen> {
     );
   }
 
+  // ── Info terakhir bayar & jatuh tempo ──
+  Widget _buildInfoTanggal() {
+    final d = _data!;
+    final selisih =
+        d.dueDate != null ? _selisihHariJatuhTempo(d.dueDate!) : null;
+    final tampilkanCountdown =
+        d.dueDate != null && d.status != 'paid' && selisih != null;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: _infoTanggalItem(
+              icon: Icons.history,
+              label: 'Terakhir Dibayar',
+              nilai: d.tanggalBayarTerakhir != null
+                  ? _formatTanggal(d.tanggalBayarTerakhir!)
+                  : 'Belum ada',
+              subNilai: d.tanggalBayarTerakhir != null
+                  ? _selisihHariLalu(d.tanggalBayarTerakhir!)
+                  : null,
+              warnaSub: hijauUtama,
+            ),
+          ),
+          Container(
+            width: 1,
+            height: 44,
+            margin: const EdgeInsets.symmetric(horizontal: 12),
+            color: const Color(0xFFEEEEEE),
+          ),
+          Expanded(
+            child: _infoTanggalItem(
+              icon: Icons.event_outlined,
+              label: 'Jatuh Tempo',
+              nilai:
+                  d.dueDate != null ? _formatTanggal(d.dueDate!) : 'Tidak ada',
+              subNilai: tampilkanCountdown ? _labelSelisihHari(selisih) : null,
+              warnaSub: tampilkanCountdown
+                  ? _warnaSelisihHari(selisih)
+                  : Colors.grey,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoTanggalItem({
+    required IconData icon,
+    required String label,
+    required String nilai,
+    String? subNilai,
+    required Color warnaSub,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Icon(icon, size: 14, color: Colors.grey),
+          const SizedBox(width: 6),
+          Text(label,
+              style: const TextStyle(
+                  color: Colors.grey,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600)),
+        ]),
+        const SizedBox(height: 6),
+        Text(nilai,
+            style: const TextStyle(
+                color: Colors.black87,
+                fontWeight: FontWeight.bold,
+                fontSize: 13)),
+        if (subNilai != null) ...[
+          const SizedBox(height: 2),
+          Text(subNilai,
+              style: TextStyle(
+                  color: warnaSub, fontSize: 11, fontWeight: FontWeight.w600)),
+        ],
+      ],
+    );
+  }
+
   // ── Item transaksi ──
   Widget _buildItemTransaksi() {
     final d = _data!;
@@ -795,6 +946,8 @@ class _FormBayarSheetState extends State<FormBayarSheet> {
   static const Color hijauUtama = Color(0xFF1A7A4A);
   static const Color hijauMuda = Color(0xFFE8F5EE);
   static const Color abukuMuda = Color(0xFFF5F5F5);
+  static const Color merah = Color(0xFFD32F2F);
+  static const Color merahMuda = Color(0xFFFFEBEE);
 
   final _formatRupiah = NumberFormat.currency(
     locale: 'id_ID',
@@ -809,6 +962,15 @@ class _FormBayarSheetState extends State<FormBayarSheet> {
   String _metodeBayar = 'cash';
   bool _isSaving = false;
   bool _lunasSemua = false;
+
+  File? _buktiFile;
+  final ImagePicker _picker = ImagePicker();
+
+  /// Nominal yang sedang diketik user, diparse dari _nominalCtrl.
+  double get _nominalSaatIni => double.tryParse(_nominalCtrl.text.trim()) ?? 0;
+
+  /// True jika nominal yang diketik melebihi sisa hutang.
+  bool get _melebihiSisaHutang => _nominalSaatIni > widget.sisaHutang;
 
   @override
   void initState() {
@@ -837,6 +999,53 @@ class _FormBayarSheetState extends State<FormBayarSheet> {
     });
   }
 
+  Future<void> _pickBukti(ImageSource source) async {
+    final picked = await _picker.pickImage(source: source, imageQuality: 80);
+    if (picked != null) {
+      setState(() => _buktiFile = File(picked.path));
+    }
+  }
+
+  void _showBuktiPickerDialog() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: hijauUtama),
+              title: const Text('Pilih dari Galeri'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickBukti(ImageSource.gallery);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: hijauUtama),
+              title: const Text('Ambil Foto'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickBukti(ImageSource.camera);
+              },
+            ),
+            if (_buktiFile != null)
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: merah),
+                title: const Text('Hapus Bukti', style: TextStyle(color: merah)),
+                onTap: () {
+                  Navigator.pop(context);
+                  setState(() => _buktiFile = null);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _simpan() async {
     final nominalStr = _nominalCtrl.text.trim();
     if (nominalStr.isEmpty) {
@@ -849,21 +1058,37 @@ class _FormBayarSheetState extends State<FormBayarSheet> {
       return;
     }
     if (nominal > widget.sisaHutang) {
-      _snack('Nominal melebihi sisa hutang!');
+      _snack(
+          'Nominal melebihi sisa hutang! Maksimal ${_formatRupiah.format(widget.sisaHutang)}');
       return;
     }
 
     setState(() => _isSaving = true);
     try {
-      await ApiService.post('payments/record', {
-        'customer_receivable_id': widget.receivableId,
-        'amount': nominal,
+      final fields = <String, String>{
+        'customer_receivable_id': widget.receivableId.toString(),
+        'amount': nominal.toString(),
         'payment_method': _metodeBayar,
         if (_referensiCtrl.text.trim().isNotEmpty)
           'reference': _referensiCtrl.text.trim(),
         if (_catatanCtrl.text.trim().isNotEmpty)
           'notes': _catatanCtrl.text.trim(),
-      });
+      };
+
+      // Pakai postMultipart supaya bukti pembayaran (kalau diisi) ikut
+      // terkirim. Kalau _buktiFile null, postMultipart tetap jalan normal
+      // sebagai request biasa tanpa file -- jadi aman dipakai selalu,
+      // tidak perlu percabangan post() vs postMultipart().
+      //
+      // fileFieldName WAJIB 'proof_of_payment', harus persis sama dengan
+      // nama field yang divalidasi di PaymentController::recordPayment
+      // ($request->hasFile('proof_of_payment')).
+      await ApiService.postMultipart(
+        'payments/record',
+        fields,
+        _buktiFile,
+        fileFieldName: 'proof_of_payment',
+      );
 
       if (mounted) {
         Navigator.pop(context);
@@ -981,19 +1206,51 @@ class _FormBayarSheetState extends State<FormBayarSheet> {
                     color: Colors.black87, fontWeight: FontWeight.w600),
                 hintText: '0',
                 filled: true,
-                fillColor: _lunasSemua ? Colors.grey.shade100 : abukuMuda,
+                fillColor: _lunasSemua
+                    ? Colors.grey.shade100
+                    : (_melebihiSisaHutang ? merahMuda : abukuMuda),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
                 ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: _melebihiSisaHutang && !_lunasSemua
+                      ? const BorderSide(color: merah, width: 1.2)
+                      : BorderSide.none,
+                ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: hijauUtama, width: 1.5),
+                  borderSide: BorderSide(
+                    color: _melebihiSisaHutang && !_lunasSemua
+                        ? merah
+                        : hijauUtama,
+                    width: 1.5,
+                  ),
                 ),
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               ),
             ),
+            if (!_lunasSemua && _melebihiSisaHutang) ...[
+              const SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.error_outline, color: merah, size: 16),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Nominal melebihi sisa hutang! Maksimal ${_formatRupiah.format(widget.sisaHutang)}',
+                      style: const TextStyle(
+                          color: merah,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ],
 
             const SizedBox(height: 20),
 
@@ -1003,11 +1260,66 @@ class _FormBayarSheetState extends State<FormBayarSheet> {
             Row(children: [
               _chipMetode('cash', 'Tunai', Icons.payments_outlined),
               const SizedBox(width: 8),
+              _chipMetode('qris', 'QRIS', Icons.qr_code_2_outlined),
+              const SizedBox(width: 8),
               _chipMetode(
                   'bank_transfer', 'Transfer', Icons.account_balance_outlined),
-              const SizedBox(width: 8),
-              _chipMetode('other', 'Lainnya', Icons.more_horiz),
             ]),
+
+            const SizedBox(height: 20),
+
+            // Bukti pembayaran (opsional)
+            _label('BUKTI PEMBAYARAN (Opsional)'),
+            const SizedBox(height: 8),
+            GestureDetector(
+              onTap: _showBuktiPickerDialog,
+              child: Container(
+                height: 130,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: abukuMuda,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: _buktiFile == null
+                    ? const Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.add_photo_alternate_outlined,
+                              color: Colors.grey, size: 36),
+                          SizedBox(height: 8),
+                          Text('Tap untuk upload bukti pembayaran',
+                              style:
+                                  TextStyle(color: Colors.grey, fontSize: 12)),
+                        ],
+                      )
+                    : Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.file(_buktiFile!, fit: BoxFit.cover),
+                          ),
+                          Positioned(
+                            top: 6,
+                            right: 6,
+                            child: GestureDetector(
+                              onTap: () => setState(() => _buktiFile = null),
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: const BoxDecoration(
+                                  color: Colors.black54,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.close,
+                                    color: Colors.white, size: 16),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+            ),
 
             const SizedBox(height: 20),
 
@@ -1083,9 +1395,11 @@ class _FormBayarSheetState extends State<FormBayarSheet> {
               Expanded(
                 flex: 2,
                 child: ElevatedButton(
-                  onPressed: _isSaving ? null : _simpan,
+                  onPressed:
+                      (_isSaving || _melebihiSisaHutang) ? null : _simpan,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: hijauUtama,
+                    disabledBackgroundColor: Colors.grey.shade300,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14)),

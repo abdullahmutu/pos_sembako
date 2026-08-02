@@ -30,7 +30,7 @@
             </div>
         @endforelse
 
-        {{-- UTANG --}}
+        {{-- UTANG JATUH TEMPO --}}
         @if($debts && count($debts))
             @foreach ($debts as $debt)
                 <div class="flex items-center gap-3 p-2.5 sm:p-3 bg-red-50 border border-red-100 rounded-xl">
@@ -39,6 +39,9 @@
                         <p class="text-sm font-semibold truncate">{{ $debt->name }}</p>
                         <p class="text-xs text-gray-500">
                             Utang Rp {{ number_format($debt->total_debt, 0, ',', '.') }}
+                            @if(isset($debt->days_overdue))
+                                &middot; Telat {{ $debt->days_overdue }} hari
+                            @endif
                         </p>
                     </div>
                 </div>

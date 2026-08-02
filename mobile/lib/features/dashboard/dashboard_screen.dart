@@ -15,7 +15,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool isLoading = true;
   double totalPenjualan = 0;
   double totalUtang = 0;
-  int pendingTransaksi = 0;
   List<Map<String, dynamic>> _transaksiHarian = [];
   bool _isLoadingTransaksi = false;
 
@@ -39,7 +38,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       setState(() {
         totalPenjualan   = _toDouble(response['todays_sales']);
         totalUtang       = _toDouble(response['debt_sales']);
-        pendingTransaksi = (response['pending_transactions'] as num?)?.toInt() ?? 0;
         isLoading        = false;
       });
       _loadTransaksiHarian();
@@ -134,14 +132,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('TRANSAKSI PENDING',
+                          const Text('TRANSAKSI HARI INI',
                               style: TextStyle(
                                   color: Colors.white60,
                                   fontSize: 10,
                                   letterSpacing: 0.5)),
                           const SizedBox(height: 4),
                           Text(
-                            '$pendingTransaksi',
+                            '${_transaksiHarian.length}',
                             style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 15,
@@ -185,7 +183,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
           const SizedBox(height: 16),
 
-          // ── Pending transaksi ──
+          // ── Transaksi hari ini ──
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -197,23 +195,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 Container(
                   width: 44, height: 44,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFEF3C7),
+                    color: const Color(0xFFD1FAE5),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(Icons.pending_actions_outlined,
-                      color: Color(0xFFD97706), size: 22),
+                  child: const Icon(Icons.receipt_long_outlined,
+                      color: Color(0xFF059669), size: 22),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Transaksi Pending',
+                      const Text('Transaksi Hari Ini',
                           style: TextStyle(
                               fontSize: 13,
                               color: Color(0xFF6B7280))),
                       Text(
-                        '$pendingTransaksi Transaksi',
+                        '${_transaksiHarian.length} Transaksi',
                         style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,

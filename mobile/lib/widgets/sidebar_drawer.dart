@@ -120,10 +120,16 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
               onTap: () => widget.onItemTap(3),
             ),
             _MenuItem(
-              icon: Icons.person_outline,
-              label: 'Profil',
+              icon: Icons.wallet_outlined,
+              label: 'Pengeluaran',
               isSelected: widget.selectedIndex == 4,
               onTap: () => widget.onItemTap(4),
+            ),
+            _MenuItem(
+              icon: Icons.person_outline,
+              label: 'Profil',
+              isSelected: widget.selectedIndex == 5,
+              onTap: () => widget.onItemTap(5),
             ),
 
             const Spacer(),

@@ -4,7 +4,11 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\Product;
+use App\Models\Expenditure;
+use App\Models\Purchase;
+use App\Models\PurchaseItem;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 
@@ -52,14 +56,65 @@ class ProductController extends Controller
             'min_stock' => 'integer|min:0',
             'unit' => 'required|string',
             'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+            // BARU: dikirim Flutter (tambah_produk_screen.dart) saat produk
+            // ini dibuat sebagai BAGIAN dari submit nota (StockInvoiceController).
+            // Kalau true, endpoint ini TIDAK membuat Purchase/Expenditure
+            // sendiri — biarkan StockInvoiceController::store() yang mencatat
+            // SATU nota utuh (dengan foto, supplier, invoice) yang mencakup
+            // biaya produk baru ini juga. Tanpa flag ini (mis. dipanggil
+            // berdiri sendiri dari panel admin), perilaku lama tetap berlaku:
+            // otomatis catat Expenditure untuk stok awal.
+            'skip_purchase_record' => 'nullable|boolean',
         ]);
+
+        $skipPurchaseRecord = filter_var(
+            $request->input('skip_purchase_record', false),
+            FILTER_VALIDATE_BOOLEAN
+        );
 
         if ($request->hasFile('image')) {
             $path = $request->file('image')->store('products', 'public');
             $validated['image'] = $path;
         }
 
-        $product = Product::create($validated);
+        $product = DB::transaction(function () use ($validated, $skipPurchaseRecord) {
+            $product = Product::create($validated);
+
+            // Hanya buat nota otomatis kalau TIDAK sedang jadi bagian dari
+            // submit nota manual (skip_purchase_record=false, default).
+            if (!$skipPurchaseRecord && ($validated['stock'] ?? 0) > 0) {
+                $purchase = Purchase::create([
+                    'invoice'      => null,
+                    'supplier'     => null,
+                    'supplier_id'  => null,
+                    'tanggal'      => now()->toDateString(),
+                    'note'         => 'Stok awal saat produk dibuat',
+                    'total'        => $validated['purchase_price'] * $validated['stock'],
+                    'created_by'   => Auth::id(),
+                    'status'       => 'completed',
+                ]);
+
+                PurchaseItem::create([
+                    'purchase_id'       => $purchase->id,
+                    'product_id'        => $product->id,
+                    'quantity'          => $validated['stock'],
+                    'purchase_price'    => $validated['purchase_price'],
+                    'skip_stock_update' => true,
+                ]);
+
+                Expenditure::create([
+                    'description'  => 'Pembelian stok - Nota: ' . ($purchase->invoice ?? $purchase->id),
+                    'amount'       => $purchase->total,
+                    'expense_date' => $purchase->tanggal,
+                    'category'     => 'pembelian_stok',
+                    'created_by'   => Auth::id(),
+                    'purchase_id'  => $purchase->id,
+                ]);
+            }
+
+            return $product;
+        });
+
         return response()->json($product->load('category'), 201);
     }
 
@@ -89,7 +144,13 @@ class ProductController extends Controller
             'unit' => 'required|string',
             'is_active' => 'boolean',
             'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'skip_purchase_record' => 'nullable|boolean',
         ]);
+
+        $skipPurchaseRecord = filter_var(
+            $request->input('skip_purchase_record', false),
+            FILTER_VALIDATE_BOOLEAN
+        );
 
         if ($request->hasFile('image')) {
             if ($product->image) {
@@ -99,8 +160,45 @@ class ProductController extends Controller
             $validated['image'] = $path;
         }
 
-        $product->update($validated);
-        return response()->json($product->load('category'));
+        $stockBefore = $product->stock;
+        $stockAfter = $validated['stock'];
+        $stockAdded = $stockAfter - $stockBefore;
+
+        DB::transaction(function () use ($product, $validated, $stockAdded, $skipPurchaseRecord) {
+            $product->update($validated);
+
+            if (!$skipPurchaseRecord && $stockAdded > 0) {
+                $purchase = Purchase::create([
+                    'invoice'      => null,
+                    'supplier'     => null,
+                    'supplier_id'  => null,
+                    'tanggal'      => now()->toDateString(),
+                    'note'         => 'Restock via halaman edit produk',
+                    'total'        => $validated['purchase_price'] * $stockAdded,
+                    'created_by'   => Auth::id(),
+                    'status'       => 'completed',
+                ]);
+
+                PurchaseItem::create([
+                    'purchase_id'       => $purchase->id,
+                    'product_id'        => $product->id,
+                    'quantity'          => $stockAdded,
+                    'purchase_price'    => $validated['purchase_price'],
+                    'skip_stock_update' => true,
+                ]);
+
+                Expenditure::create([
+                    'description'  => 'Restock - Nota: ' . ($purchase->invoice ?? $purchase->id),
+                    'amount'       => $purchase->total,
+                    'expense_date' => $purchase->tanggal,
+                    'category'     => 'pembelian_stok',
+                    'created_by'   => Auth::id(),
+                    'purchase_id'  => $purchase->id,
+                ]);
+            }
+        });
+
+        return response()->json($product->fresh()->load('category'));
     }
 
     public function destroy(Product $product)

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:mobile/features/hutang/utang_screen.dart';
+import 'package:mobile/features/expenditure/expenditure_list_screen.dart';
 import 'package:mobile/widgets/sidebar_drawer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -91,6 +92,7 @@ class _MainScreenState extends State<MainScreen> {
     'Transaksi',
     'Tambah Produk',
     'Utang',
+    'Pengeluaran',
     'Profil',
   ];
 
@@ -99,6 +101,7 @@ class _MainScreenState extends State<MainScreen> {
     const TransaksiScreen(),
     const ProdukScreen(),
     const UtangScreen(),
+    const ExpenditureListScreen(),
     const ProfilScreen(),
   ];
 
