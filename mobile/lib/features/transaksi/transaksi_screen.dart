@@ -54,7 +54,13 @@ class _TransaksiScreenState extends State<TransaksiScreen> {
 
       setState(() {
         _produkList = produk;
-        _filteredList = produk;
+        // ⚠️ FIX: hanya produk yang aktif (is_active) DAN masih ada stok
+        // yang ditampilkan di halaman transaksi. Produk yang stoknya habis
+        // otomatis is_active=false dari backend, jadi kondisi ini cukup,
+        // tapi cek stok tetap dipertahankan sebagai lapisan keamanan kedua.
+        _filteredList = produk
+            .where((p) => _isActive(p) && _getStok(p) > 0)
+            .toList();
         _kategoriList = ['Semua', ...kategori];
         isLoading = false;
       });
@@ -76,7 +82,10 @@ class _TransaksiScreenState extends State<TransaksiScreen> {
         final matchKat =
             _selectedKategori == 'Semua' || kategori == _selectedKategori;
         final matchQ = nama.contains(query);
-        return matchKat && matchQ;
+        // ⚠️ FIX: produk yang tidak aktif atau stoknya habis tetap disaring
+        // keluar walau sedang melakukan pencarian atau pindah kategori.
+        final aktifDanAdaStok = _isActive(p) && _getStok(p) > 0;
+        return matchKat && matchQ && aktifDanAdaStok;
       }).toList();
     });
   }
@@ -91,7 +100,44 @@ class _TransaksiScreenState extends State<TransaksiScreen> {
     return idx != -1 ? CartService.cart[idx]['qty'] as int : 0;
   }
 
+  // Helper terpusat untuk mengambil nilai stok dari sebuah map produk/item.
+  int _getStok(Map<String, dynamic> produk) {
+    final stok = produk['stock'] ?? produk['stok'] ?? 0;
+    if (stok is int) return stok;
+    return int.tryParse(stok.toString()) ?? 0;
+  }
+
+  // ⚠️ FIX: helper untuk cek status aktif produk. Backend sekarang otomatis
+  // men-set is_active = false saat stok produk 0 (lihat Product::boot() di
+  // Laravel), jadi field ini adalah sumber kebenaran utama untuk menentukan
+  // apakah sebuah produk boleh tampil di halaman transaksi. Default true
+  // kalau field tidak ada, supaya data lama yang belum punya kolom ini tidak
+  // ikut hilang dari daftar.
+  bool _isActive(Map<String, dynamic> produk) {
+    final aktif = produk['is_active'] ?? produk['aktif'];
+    if (aktif == null) return true;
+    if (aktif is bool) return aktif;
+    if (aktif is int) return aktif != 0;
+    return aktif.toString().toLowerCase() == 'true' || aktif.toString() == '1';
+  }
+
+  // ⚠️ FIX: _tambah sekarang menjadi satu-satunya gerbang penambahan qty.
+  // Produk dengan stok habis (stok <= 0) tidak bisa ditambahkan sama sekali,
+  // dan qty di keranjang tidak boleh melebihi stok yang tersedia.
   void _tambah(Map<String, dynamic> produk) {
+    final stok = _getStok(produk);
+
+    // Stok habis -> nonaktif total, tidak melakukan apa-apa.
+    if (stok <= 0) return;
+
+    final qtySekarang = _getQty(produk['id']);
+    if (qtySekarang >= stok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Qty sudah mencapai batas stok tersedia')),
+      );
+      return;
+    }
+
     setState(() => CartService.addToCart(produk));
   }
 
@@ -163,10 +209,15 @@ class _TransaksiScreenState extends State<TransaksiScreen> {
 
         if (utangPayload == null || !mounted) return;
 
+        // ⚠️ FIX: due_date dari TambahUtangForm sekarang ikut diteruskan.
+        // Sebelumnya hanya customer_id & notes yang dikirim, sehingga
+        // jatuh tempo yang dipilih kasir di form selalu hilang dan
+        // tersimpan null di database.
         final response = await CartService.checkout(
           paymentType: 'debt',
           customerId: utangPayload!['customer_id'],
           notes: utangPayload!['notes'],
+          dueDate: utangPayload!['due_date'],
         );
 
         if (!mounted) return;
@@ -426,13 +477,17 @@ class _TransaksiScreenState extends State<TransaksiScreen> {
       itemBuilder: (context, index) {
         final produk = _filteredList[index];
         final qty = _getQty(produk['id']);
-        final stok = produk['stock'] ?? produk['stok'] ?? 0;
+        final stok = _getStok(produk);
         final harga = double.parse(produk['selling_price'].toString());
         final kat = (produk['category']?['name'] ?? produk['kategori'] ?? '')
             .toString()
             .toUpperCase();
         final menipis = stok > 0 && stok < 10;
 
+        // Catatan: produk dengan stok habis (stok <= 0) sudah disaring keluar
+        // di _applyFilter()/_loadProduk(), jadi tidak akan pernah sampai ke
+        // sini. GestureDetector di bawah tetap aman karena _tambah() masih
+        // punya guard stok sebagai lapisan pertahanan kedua.
         return GestureDetector(
           onTap: () => _tambah(produk),
           child: _ProdukCard(
@@ -456,6 +511,8 @@ class _TransaksiScreenState extends State<TransaksiScreen> {
     final namaItem = lastItem['name'] ?? '-';
     final hargaItem = double.parse(lastItem['selling_price'].toString());
     final qtyItem = lastItem['qty'] as int;
+    final stokItem = _getStok(lastItem);
+    final habisItem = stokItem <= 0 || qtyItem >= stokItem;
 
     return SafeArea(
       top: false,
@@ -521,16 +578,24 @@ class _TransaksiScreenState extends State<TransaksiScreen> {
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                   ),
                 ),
+                // ⚠️ FIX: tombol tambah di cart bar juga dinonaktifkan bila
+                // qty sudah mencapai batas stok, supaya konsisten dengan
+                // aturan di _tambah().
                 GestureDetector(
-                  onTap: () => _tambah(lastItem),
+                  onTap: habisItem ? null : () => _tambah(lastItem),
                   child: Container(
                     width: 28,
                     height: 28,
                     decoration: BoxDecoration(
                       border: Border.all(color: const Color(0xFFE5E7EB)),
                       borderRadius: BorderRadius.circular(8),
+                      color: habisItem ? const Color(0xFFF3F4F6) : null,
                     ),
-                    child: const Icon(Icons.add, size: 16),
+                    child: Icon(
+                      Icons.add,
+                      size: 16,
+                      color: habisItem ? const Color(0xFFD1D5DB) : null,
+                    ),
                   ),
                 ),
               ],
@@ -578,6 +643,12 @@ class _CartSidePanel extends StatefulWidget {
 }
 
 class _CartSidePanelState extends State<_CartSidePanel> {
+  int _getStok(Map<String, dynamic> item) {
+    final stok = item['stock'] ?? item['stok'] ?? 0;
+    if (stok is int) return stok;
+    return int.tryParse(stok.toString()) ?? 0;
+  }
+
   @override
   Widget build(BuildContext context) {
     final items = CartService.cart;
@@ -607,6 +678,8 @@ class _CartSidePanelState extends State<_CartSidePanel> {
                       final qty = item['qty'] as int;
                       final harga = double.parse(item['selling_price'].toString());
                       final subtotal = harga * qty;
+                      final stok = _getStok(item);
+                      final habisTambah = stok > 0 && qty >= stok;
                       return Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         child: Row(
@@ -635,15 +708,17 @@ class _CartSidePanelState extends State<_CartSidePanel> {
                                   ),
                                 ),
                                 SizedBox(width: 8, child: Center(child: Text('$qty', style: const TextStyle(fontWeight: FontWeight.bold)))),
+                                // ⚠️ FIX: nonaktifkan tombol "+" saat qty sudah
+                                // mencapai batas stok yang tersedia.
                                 GestureDetector(
-                                  onTap: () => widget.onTambah(item),
+                                  onTap: habisTambah ? null : () => widget.onTambah(item),
                                   child: Container(
                                     width: 30, height: 30,
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFFD1FAE5),
+                                      color: habisTambah ? const Color(0xFFF3F4F6) : const Color(0xFFD1FAE5),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
-                                    child: const Icon(Icons.add, size: 16, color: Color(0xFF059669)),
+                                    child: Icon(Icons.add, size: 16, color: habisTambah ? const Color(0xFFD1D5DB) : const Color(0xFF059669)),
                                   ),
                                 ),
                               ],
@@ -707,7 +782,19 @@ class _KeranjangDetailSheetState extends State<_KeranjangDetailSheet> {
   List<Map<String, dynamic>> get _items => CartService.cart;
   int get _total => CartService.totalHarga;
 
+  int _getStok(Map<String, dynamic> item) {
+    final stok = item['stock'] ?? item['stok'] ?? 0;
+    if (stok is int) return stok;
+    return int.tryParse(stok.toString()) ?? 0;
+  }
+
+  // ⚠️ FIX: sheet ini sebelumnya memanggil CartService.addToCart() langsung,
+  // jadi lolos dari pengecekan stok yang ada di _tambah() milik
+  // TransaksiScreen. Sekarang qty juga tidak boleh melebihi stok di sini.
   void _tambah(Map<String, dynamic> item) {
+    final stok = _getStok(item);
+    final qtySekarang = item['qty'] as int;
+    if (stok > 0 && qtySekarang >= stok) return;
     setState(() => CartService.addToCart(item));
   }
 
@@ -796,6 +883,8 @@ class _KeranjangDetailSheetState extends State<_KeranjangDetailSheet> {
                 final qty = item['qty'] as int;
                 final harga = double.parse(item['selling_price'].toString());
                 final subtotal = harga * qty;
+                final stok = _getStok(item);
+                final habisTambah = stok > 0 && qty >= stok;
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   child: Row(
@@ -858,16 +947,21 @@ class _KeranjangDetailSheetState extends State<_KeranjangDetailSheet> {
                             ),
                           ),
                           GestureDetector(
-                            onTap: () => _tambah(item),
+                            onTap: habisTambah ? null : () => _tambah(item),
                             child: Container(
                               width: 30,
                               height: 30,
                               decoration: BoxDecoration(
-                                color: const Color(0xFFD1FAE5),
+                                color: habisTambah
+                                    ? const Color(0xFFF3F4F6)
+                                    : const Color(0xFFD1FAE5),
                                 borderRadius: BorderRadius.circular(8),
                               ),
-                              child: const Icon(Icons.add,
-                                  size: 16, color: Color(0xFF059669)),
+                              child: Icon(Icons.add,
+                                  size: 16,
+                                  color: habisTambah
+                                      ? const Color(0xFFD1D5DB)
+                                      : const Color(0xFF059669)),
                             ),
                           ),
                         ],
@@ -1323,8 +1417,6 @@ class _NonTunaiCard extends StatelessWidget {
   }
 }
 
-
-
 // -----------------------------
 // ProdukCard widget (responsif)
 // -----------------------------
@@ -1353,6 +1445,9 @@ class _ProdukCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final habis = stok <= 0;
+    final habisTambah = habis || qty >= stok;
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -1448,7 +1543,7 @@ class _ProdukCard extends StatelessWidget {
                   ),
                   const Spacer(),
                   // Tombol
-                  stok <= 0
+                  habis
                       ? Container(
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(vertical: 6),
@@ -1488,13 +1583,19 @@ class _ProdukCard extends StatelessWidget {
                                 ),
                               ),
                             )
+                          // ⚠️ FIX: jika qty di keranjang sudah menyentuh batas
+                          // stok, tombol "Terpilih" ini juga dinonaktifkan
+                          // (abu-abu, tidak bisa ditekan) supaya tidak bisa
+                          // menambah qty melebihi stok yang tersedia.
                           : GestureDetector(
-                              onTap: onTambah,
+                              onTap: habisTambah ? null : onTambah,
                               child: Container(
                                 width: double.infinity,
                                 padding: const EdgeInsets.symmetric(vertical: 6),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF059669),
+                                  color: habisTambah
+                                      ? const Color(0xFF9CA3AF)
+                                      : const Color(0xFF059669),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Row(

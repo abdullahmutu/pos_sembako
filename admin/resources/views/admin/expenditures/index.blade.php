@@ -1,50 +1,103 @@
-<x-layouts.layout title="Pengeluaran" pageTitle="Manajemen Pengeluaran">
-    <div class="container mx-auto">
-        <div class="flex justify-between items-center mb-4">
-            <h1 class="text-2xl font-bold">💰 Pengeluaran Toko</h1>
-            <a href="{{ route('expenditures.create') }}" class="bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">+ Tambah Pengeluaran</a>
-        </div>
+<x-layouts.layout title="Pengeluaran" pageTitle="Pengeluaran" no-scroll>
 
-        @if($expenditures->count() > 0)
-            <div class="bg-white rounded-lg shadow overflow-hidden">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Deskripsi</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Jumlah</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tanggal</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Kategori</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Dicatat oleh</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Aksi</th>
-                        </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                        @foreach($expenditures as $exp)
-                        <tr>
-                            <td class="px-6 py-4">{{ $exp->description }}</td>
-                            <td class="px-6 py-4 font-semibold text-red-600">- Rp {{ number_format($exp->amount, 0, ',', '.') }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap">{{ $exp->expense_date }}</td>
-                            <td class="px-6 py-4">{{ $exp->category ?? '-' }}</td>
-                            <td class="px-6 py-4">{{ $exp->user->name ?? '-' }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                <a href="{{ route('expenditures.edit', $exp) }}" class="text-emerald-600 hover:text-emerald-900 mr-2">Edit</a>
-                                <form action="{{ route('expenditures.destroy', $exp) }}" method="POST" class="inline">
-                                    @csrf @method('DELETE')
-                                    <button type="submit" class="text-red-600 hover:text-red-900" onclick="return confirm('Yakin hapus?')">Hapus</button>
-                                </form>
-                            </td>
-                        </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            </div>
-            <div class="mt-4">
-                {{ $expenditures->links() }}
-            </div>
-        @else
-            <div class="bg-white rounded-lg shadow p-6 text-center">
-                <p class="text-gray-500">Belum ada pengeluaran.</p>
-            </div>
-        @endif
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-lg font-bold text-gray-900">Manajemen Pengeluaran</h1>
+            <p class="text-xs text-gray-400 mt-0.5 hidden sm:block">Kelola semua pengeluaran toko Anda</p>
+        </div>
+        <x-button
+            :href="route('expenditures.create')"
+            icon="bi-plus-lg"
+            label="Tambah Pengeluaran"
+            variant="primary"
+        />
     </div>
+
+    <x-widget::list-card
+        :total="$expenditures->total()"
+        search-placeholder="Cari pengeluaran..."
+        empty-text="Belum ada pengeluaran"
+        empty-icon="bi-wallet2"
+        :is-empty="$expenditures->isEmpty()"
+    >
+        <x-slot:head>
+            <th class="text-left px-3 sm:px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Deskripsi</th>
+            <th class="hidden sm:table-cell text-left px-3 sm:px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Kategori</th>
+            <th class="text-left px-3 sm:px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Jumlah</th>
+            <th class="hidden sm:table-cell text-left px-3 sm:px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Tanggal</th>
+            <th class="hidden md:table-cell text-left px-3 sm:px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Dicatat Oleh</th>
+            <th class="text-right px-3 sm:px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Aksi</th>
+        </x-slot:head>
+
+        @foreach ($expenditures as $exp)
+            <tr class="hover:bg-gray-50/70 transition">
+                {{-- Deskripsi --}}
+                <td class="px-3 sm:px-5 py-3 sm:py-4">
+                    <a href="{{ route('expenditures.show', $exp) }}" class="font-semibold text-gray-900 text-sm hover:text-emerald-600">
+                        {{ $exp->description }}
+                    </a>
+                    @if ($exp->purchase && $exp->purchase->items->count() > 0)
+                        <p class="text-[11px] text-gray-400 mt-0.5">
+                            {{ $exp->purchase->items->count() }} produk
+                        </p>
+                    @endif
+                    <p class="sm:hidden text-[10px] font-medium text-gray-400 mt-0.5">{{ $exp->category ?? '-' }}</p>
+                </td>
+                {{-- Kategori: hidden di HP --}}
+                <td class="hidden sm:table-cell px-3 sm:px-5 py-3 sm:py-4">
+                    <span class="text-xs font-medium text-gray-600 bg-gray-100 px-2.5 py-1 rounded-full">
+                        {{ $exp->category ?? '-' }}
+                    </span>
+                </td>
+                {{-- Jumlah --}}
+                <td class="px-3 sm:px-5 py-3 sm:py-4">
+                    <span class="text-xs sm:text-sm font-semibold text-red-600">
+                        - Rp {{ number_format($exp->amount, 0, ',', '.') }}
+                    </span>
+                </td>
+                {{-- Tanggal: hidden di HP --}}
+                <td class="hidden sm:table-cell px-3 sm:px-5 py-3 sm:py-4 text-sm text-gray-600">
+                    {{ \Carbon\Carbon::parse($exp->expense_date)->format('d M Y') }}
+                </td>
+                {{-- Dicatat oleh: hidden di HP & tablet --}}
+                <td class="hidden md:table-cell px-3 sm:px-5 py-3 sm:py-4 text-sm text-gray-600">
+                    {{ $exp->user->name ?? '-' }}
+                </td>
+                {{-- Aksi --}}
+                <td class="px-3 sm:px-5 py-3 sm:py-4">
+                    <div class="flex items-center justify-end gap-1 sm:gap-2">
+                        <x-button
+                            :href="route('expenditures.show', $exp)"
+                            icon="bi-eye"
+                            label="Detail"
+                            variant="icon-secondary"
+                        />
+                        <x-button
+                            :href="route('expenditures.edit', $exp)"
+                            icon="bi-pencil"
+                            label="Edit"
+                            variant="icon-warning"
+                        />
+                        <form action="{{ route('expenditures.destroy', $exp) }}" method="POST"
+                            onsubmit="return confirm('Hapus pengeluaran ini?')">
+                            @csrf @method('DELETE')
+                            <x-button
+                                type="submit"
+                                icon="bi-trash"
+                                label="Hapus"
+                                variant="icon-danger"
+                            />
+                        </form>
+                    </div>
+                </td>
+            </tr>
+        @endforeach
+
+        <x-slot:pagination>
+            {{ $expenditures->links() }}
+        </x-slot:pagination>
+
+    </x-widget::list-card>
+
 </x-layouts.layout>

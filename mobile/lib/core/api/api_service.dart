@@ -93,12 +93,23 @@ class ApiService {
   static String get baseUrl => AppConfig.baseUrl;
 
   // Helper untuk Multipart Request (POST/PUT)
+  //
+  // PENTING: fileFieldName menentukan nama field file yang dikirim ke
+  // backend (mis. 'image', 'receipt_image', dst). Ini HARUS persis sama
+  // dengan nama field yang divalidasi/dicek via $request->hasFile('...')
+  // di controller Laravel tujuan. Kalau berbeda, Laravel tidak akan
+  // "melihat" file tersebut sama sekali (hasFile() = false) meski file
+  // sudah terkirim di request — request tetap sukses, tapi kolom terkait
+  // di DB akan tetap null. Sebelumnya nama ini hardcode 'image', sehingga
+  // endpoint yang mengharapkan nama lain (mis. stock_invoices ->
+  // 'receipt_image') selalu gagal menyimpan filenya.
   static Future<dynamic> _multipartRequest(
     String method,
     String endpoint,
     Map<String, String> fields,
-    File? imageFile,
-  ) async {
+    File? imageFile, {
+    String fileFieldName = 'image',
+  }) async {
     final uri = Uri.parse('${AppConfig.baseUrl}/$endpoint');
     final request = http.MultipartRequest(method, uri);
 
@@ -114,7 +125,7 @@ class ApiService {
       final ext = imageFile.path.split('.').last.toLowerCase();
       final mimeType = ext == 'png' ? 'png' : 'jpeg';
       request.files.add(await http.MultipartFile.fromPath(
-        'image',
+        fileFieldName,
         imageFile.path,
         contentType: MediaType('image', mimeType),
       ));
@@ -126,18 +137,24 @@ class ApiService {
   }
 
   // POST Multipart (upload gambar baru)
+  // Contoh pemakaian:
+  //   ApiService.postMultipart('products', fields, file); // pakai 'image' (default)
+  //   ApiService.postMultipart('stock_invoices', fields, file, fileFieldName: 'receipt_image');
   static Future<dynamic> postMultipart(
     String endpoint,
     Map<String, String> fields,
-    File? imageFile,
-  ) => _multipartRequest('POST', endpoint, fields, imageFile);
+    File? imageFile, {
+    String fileFieldName = 'image',
+  }) =>
+      _multipartRequest('POST', endpoint, fields, imageFile, fileFieldName: fileFieldName);
 
   // PUT Multipart (update dengan gambar baru)
   static Future<dynamic> putMultipart(
     String endpoint,
     Map<String, String> fields,
-    File? imageFile,
-  ) async {
+    File? imageFile, {
+    String fileFieldName = 'image',
+  }) async {
     final uri = Uri.parse('${AppConfig.baseUrl}/$endpoint');
     final request = http.MultipartRequest('POST', uri); // ← POST, bukan PUT
 
@@ -152,7 +169,7 @@ class ApiService {
       final ext = imageFile.path.split('.').last.toLowerCase();
       final mimeType = ext == 'png' ? 'png' : 'jpeg';
       request.files.add(await http.MultipartFile.fromPath(
-        'image', imageFile.path,
+        fileFieldName, imageFile.path,
         contentType: MediaType('image', mimeType),
       ));
     }
@@ -161,6 +178,7 @@ class ApiService {
     final response = await http.Response.fromStream(streamed);
     return _handleResponse(response);
   }
+
   // Handler response terpusat
   static dynamic _handleResponse(http.Response response) {
     debugPrint('STATUS : ${response.statusCode}');

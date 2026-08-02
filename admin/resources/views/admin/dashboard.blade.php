@@ -38,9 +38,9 @@
 
             {{-- 📊 CHART --}}
             <x-chart-card
-                title="Tren Penjualan"
+                title="Tren Pendapatan & Pengeluaran"
                 :subtitle="$mode == 'monthly' ? 'Bulan ini' : '7 hari terakhir'"
-                :data="$salesChart"
+                :data="$trendChart"
                 :mode="$mode"
             />
 

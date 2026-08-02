@@ -35,4 +35,23 @@ return [
         ],
     ],
 
+    'trends' => [
+        'url' => env('TRENDS_SERVICE_URL', 'http://localhost:5000'),
+        'key' => env('TRENDS_SERVICE_KEY'),
+        'geo' => env('TRENDS_SERVICE_GEO', 'ID'),
+
+        // Daftar kata kunci produk sembako umum, dipakai untuk cek skor
+        // trending "Trend Global" -- supaya hasilnya relevan dengan warung
+        // sembako, bukan topik trending nasional yang acak (berita, bola, dll).
+        // Silakan tambah/kurangi sesuai jenis dagangan toko Anda.
+        'sembako_keywords' => [
+            'beras', 'minyak goreng', 'gula pasir', 'telur ayam', 'tepung terigu',
+            'kecap manis', 'saus sambal', 'garam dapur', 'mie instan', 'susu kental manis',
+            'kopi bubuk', 'teh celup', 'sabun mandi', 'sabun cuci piring', 'deterjen',
+            'pasta gigi', 'shampoo', 'mentega', 'margarin', 'bawang merah',
+            'bawang putih', 'cabai', 'gas lpg', 'air mineral', 'kopi instan',
+            'sarden kaleng', 'kornet', 'biskuit', 'wafer', 'permen',
+        ],
+    ],
+
 ];

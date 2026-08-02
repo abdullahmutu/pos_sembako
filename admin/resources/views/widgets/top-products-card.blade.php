@@ -8,9 +8,6 @@
     <!-- Header -->
     <div class="px-4 sm:px-5 pt-4 sm:pt-5 pb-3 sm:pb-4 flex items-center justify-between border-b border-gray-50">
         <h3 class="text-sm font-bold text-gray-900">{{ $title }}</h3>
-        <button class="w-7 h-7 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center hover:bg-emerald-100 transition">
-            <i class="bi bi-plus text-base"></i>
-        </button>
     </div>
 
     <!-- List -->
@@ -40,14 +37,6 @@
                 <p class="text-gray-400 text-xs">Belum ada data</p>
             </div>
         @endforelse
-    </div>
-
-    <!-- Footer -->
-    <div class="px-4 pb-4 mt-auto">
-        <a href="{{ route('reports.products') }}"
-           class="block w-full text-center text-xs font-semibold text-emerald-600 border border-emerald-200 rounded-xl py-2.5 hover:bg-emerald-50 transition">
-            Lihat Semua
-        </a>
     </div>
 
 </div>

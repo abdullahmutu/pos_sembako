@@ -14,8 +14,19 @@ return new class extends Migration
             $table->decimal('amount', 12, 2);
             $table->date('expense_date');
             $table->string('category')->nullable(); // stok, listrik, gaji, dll
-            $table->foreignId('created_by')->constrained('users')->onDelete('restrict');
+
+            // created_by nullable agar tidak wajib selalu ada user
+            $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
+
+            // optional: relasi ke purchases jika ingin mengaitkan pengeluaran ke pembelian stok
+            $table->foreignId('purchase_id')->nullable()->constrained('purchases')->nullOnDelete();
+
             $table->timestamps();
+
+            // index untuk query laporan
+            $table->index('expense_date');
+            $table->index('category');
+            $table->index('created_by');
         });
     }
 

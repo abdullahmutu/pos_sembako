@@ -4,3 +4,13 @@ String formatRupiah(double value) {
     (m) => '${m[1]}.',
   )}';
 }
+
+DateTime parseDateOnly(String raw) {
+  final datePart = raw.split('T').first;
+  final parts = datePart.split('-');
+  return DateTime(
+    int.parse(parts[0]),
+    int.parse(parts[1]),
+    int.parse(parts[2]),
+  );
+}
